@@ -53,6 +53,11 @@ def validate_uploaded_video(path):
     return info
 
 
+def read_video_bytes(path):
+    with open(path, "rb") as f:
+        return f.read()
+
+
 uploaded_file = st.file_uploader(
     "Upload Traffic Video",
     type=["mp4", "avi", "mov"]
@@ -70,7 +75,7 @@ if uploaded_file:
         st.subheader("Original Video")
         col1, col2, col3 = st.columns([1, 2, 1])
         with col2:
-            st.video(input_path)
+            st.video(read_video_bytes(input_path), format="video/mp4")
 
         meta_cols = st.columns(3)
         meta_cols[0].metric("Resolution", f"{video_info['width']}x{video_info['height']}")
@@ -108,7 +113,7 @@ if uploaded_file:
 
                     col1, col2, col3 = st.columns([1, 2, 1])
                     with col2:
-                        st.video(output_video)
+                        st.video(read_video_bytes(output_video), format="video/mp4")
 
                     with open(output_video, "rb") as f:
                         st.download_button(

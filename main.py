@@ -3,6 +3,8 @@ import time
 import csv
 import os
 import numpy as np
+import subprocess as sp
+import shutil
 from ultralytics import YOLO
 
 MODEL_PATH = "yolov8n.pt"
@@ -120,15 +122,36 @@ def process_video(input_video, target_width=640):
     height = int(orig_height * (target_width / orig_width))
     height = height if height % 2 == 0 else height + 1
 
-    for codec in ["avc1", "H264", "mp4v"]:
-        fourcc = cv2.VideoWriter_fourcc(*codec)
-        writer = cv2.VideoWriter(output_video, fourcc, fps, (width, height))
-        if writer.isOpened():
-            used_codec = codec
-            break
-        writer.release()
+    ffmpeg_path = shutil.which("ffmpeg")
+    use_ffmpeg = ffmpeg_path is not None
+
+    if use_ffmpeg:
+        cmd = [
+            ffmpeg_path, "-y",
+            "-f", "rawvideo",
+            "-vcodec", "rawvideo",
+            "-s", f"{width}x{height}",
+            "-pix_fmt", "bgr24",
+            "-r", str(fps),
+            "-i", "-",
+            "-c:v", "libx264",
+            "-pix_fmt", "yuv420p",
+            "-preset", "fast",
+            "-crf", "23",
+            output_video
+        ]
+        ffmpeg_proc = sp.Popen(cmd, stdin=sp.PIPE)
+        used_codec = "H.264 (libx264)"
     else:
-        raise RuntimeError("No usable video codec found")
+        for codec in ["avc1", "H264", "mp4v"]:
+            fourcc = cv2.VideoWriter_fourcc(*codec)
+            writer = cv2.VideoWriter(output_video, fourcc, fps, (width, height))
+            if writer.isOpened():
+                used_codec = codec
+                break
+            writer.release()
+        else:
+            raise RuntimeError("No usable video codec found and FFmpeg not available")
 
     tracker = Tracker()
     vehicle_positions = {}
@@ -137,6 +160,7 @@ def process_video(input_video, target_width=640):
     csv_writer = csv.writer(csv_out)
     csv_writer.writerow(["Vehicle_ID", "Type", "Speed_km_h"])
 
+    frame_count = 0
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -184,10 +208,27 @@ def process_video(input_video, target_width=640):
             )
             csv_writer.writerow([vehicle_id, VEHICLE_CLASSES[cls], round(speed, 2)])
 
-        writer.write(frame)
+        if use_ffmpeg:
+            ffmpeg_proc.stdin.write(frame.tobytes())
+        else:
+            writer.write(frame)
+        frame_count += 1
 
     cap.release()
-    writer.release()
     csv_out.close()
+
+    if use_ffmpeg:
+        ffmpeg_proc.stdin.close()
+        ffmpeg_proc.wait()
+    else:
+        writer.release()
+
+    # Verify output
+    v = validate_video(output_video)
+    print(f"Video: {output_video}")
+    print(f"Codec: {used_codec}")
+    print(f"FPS: {v['fps']:.2f}")
+    print(f"Frames: {v['frame_count']}")
+    print(f"Resolution: {v['width']}x{v['height']}")
 
     return output_video, csv_file, used_codec
