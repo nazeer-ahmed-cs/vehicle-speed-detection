@@ -9,6 +9,8 @@ build/
 uploads/
 output/
 input/
+input.mp4
+*.mp4
 
 yolov8n.pt
 
